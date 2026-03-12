@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
-import { Clock, CheckCircle2, XCircle, Trophy, AlertTriangle } from 'lucide-react';
+import { Clock, CheckCircle2, XCircle, Trophy, AlertTriangle, Send } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import MathText from '../../components/MathText';
 import { useGame } from '../../contexts/GameContext';
@@ -71,7 +71,6 @@ export default function PlayerRoom() {
   // Confetti for top 3 finishers
   useEffect(() => {
     if (gameState === 'finished' && myPlayer) {
-      // Simple check - fire confetti for all finished players since ranking info is available
       confetti({
         particleCount: 100,
         spread: 70,
@@ -122,6 +121,7 @@ export default function PlayerRoom() {
     );
   }
 
+  // ===== PLAYING: Đã chọn đáp án → Hiện "Đã ghi nhận" =====
   if (gameState === 'playing' && currentQuestion) {
     const colors = [
       'bg-red-500 hover:bg-red-600 border-red-600',
@@ -130,6 +130,55 @@ export default function PlayerRoom() {
       'bg-green-500 hover:bg-green-600 border-green-600'
     ];
 
+    // Nếu đã chọn đáp án → Hiện màn xác nhận
+    if (selectedAnswer !== null) {
+      const selectedColor = ['bg-red-500', 'bg-blue-500', 'bg-yellow-500', 'bg-green-500'][selectedAnswer];
+      return (
+        <div className="min-h-screen bg-slate-50 flex flex-col">
+          <header className="bg-white shadow-sm p-4 flex justify-between items-center sticky top-0 z-10">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">{myPlayer.avatar}</span>
+              <div>
+                <div className="font-bold text-slate-800">{myPlayer.name}</div>
+                <div className="text-sm font-bold text-orange-500">{myPlayer.score} điểm</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 bg-slate-100 px-4 py-2 rounded-full">
+              <Clock className={timeLeft <= 5 ? 'text-red-500 animate-pulse' : 'text-slate-500'} size={24} />
+              <span className={`text-xl font-black ${timeLeft <= 5 ? 'text-red-500' : 'text-slate-700'}`}>{timeLeft}</span>
+            </div>
+          </header>
+
+          <main className="flex-1 flex flex-col items-center justify-center gap-8 p-6">
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ type: 'spring', stiffness: 200 }}
+              className="text-center"
+            >
+              <div className={`w-24 h-24 ${selectedColor} rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl`}>
+                <Send size={40} className="text-white" />
+              </div>
+              <h1 className="text-4xl font-black text-slate-800 mb-3">Đã ghi nhận!</h1>
+              <p className="text-xl text-slate-500">
+                Bạn đã chọn <span className={`font-black text-2xl ${selectedColor.replace('bg-', 'text-')}`}>{String.fromCharCode(65 + selectedAnswer)}</span>
+              </p>
+            </motion.div>
+
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: [0.3, 1] }}
+              transition={{ repeat: Infinity, duration: 1.5 }}
+              className="text-lg text-slate-400 font-bold"
+            >
+              Đang chờ công bố đáp án...
+            </motion.p>
+          </main>
+        </div>
+      );
+    }
+
+    // Chưa chọn → Hiện câu hỏi và đáp án
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">
         <header className="bg-white shadow-sm p-4 flex justify-between items-center sticky top-0 z-10">
@@ -156,20 +205,19 @@ export default function PlayerRoom() {
 
           <div className="grid grid-cols-1 gap-4 w-full">
             {currentQuestion.options.map((opt: string, i: number) => {
-              const isSelected = selectedAnswer === i;
-              const isDisabled = selectedAnswer !== null;
+              const cleanOpt = opt.replace(/^[A-D][\.\/\)\:\-]\s*/i, '').trim();
               
               return (
                 <button
                   key={i}
                   onClick={() => handleSubmitAnswer(i)}
-                  disabled={isDisabled}
-                  className={`${colors[i]} text-white p-6 rounded-2xl shadow-md border-b-8 flex items-center gap-4 text-xl font-bold transition-all transform ${isSelected ? 'scale-[1.02] ring-4 ring-white shadow-xl' : ''} ${isDisabled && !isSelected ? 'opacity-50 grayscale' : 'active:border-b-0 active:translate-y-2'}`}
+                  disabled={selectedAnswer !== null}
+                  className={`${colors[i]} text-white p-6 rounded-2xl shadow-md border-b-8 flex items-center gap-4 text-xl font-bold transition-all transform active:border-b-0 active:translate-y-2`}
                 >
                   <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
                     {String.fromCharCode(65 + i)}
                   </div>
-                  <MathText text={opt} className="text-left" />
+                  <MathText text={cleanOpt} className="text-left" />
                 </button>
               );
             })}
@@ -199,6 +247,16 @@ export default function PlayerRoom() {
         <h1 className="text-5xl font-black mb-4 drop-shadow-md">
           {isCorrect ? 'CHÍNH XÁC!' : 'SAI RỒI!'}
         </h1>
+
+        {isCorrect ? (
+          <p className="text-2xl font-bold mb-2 text-green-100">
+            🎉 Bạn đi tiếp!
+          </p>
+        ) : (
+          <p className="text-2xl font-bold mb-2 text-red-100">
+            {myPlayer.isEliminated ? '❌ Bạn đã bị loại!' : 'Đáp án đúng là ' + String.fromCharCode(65 + answerResult.correctAnswer)}
+          </p>
+        )}
         
         <div className="bg-black/20 p-6 rounded-3xl backdrop-blur-sm border border-white/10 mt-8">
           <p className="text-lg text-white/80 uppercase tracking-widest mb-2">Điểm hiện tại</p>

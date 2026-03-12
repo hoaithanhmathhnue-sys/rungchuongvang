@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { Plus, Play, Sparkles, BookOpen, Settings, Trash2, Pencil, X, Tag, Upload, FileText, Loader2 } from 'lucide-react';
 import { useApiKey } from '../../contexts/ApiKeyContext';
 import { useGame } from '../../contexts/GameContext';
-import { getAllQuestions, addQuestions, deleteQuestion, updateQuestion, getSubjects, addSubject, removeSubject } from '../../services/gameStore';
+import { getAllQuestions, addQuestions, deleteQuestion, deleteAllQuestions, deleteQuestionsBySubject, updateQuestion, getSubjects, addSubject, removeSubject } from '../../services/gameStore';
 import { generateQuestions } from '../../services/geminiService';
 import { extractTextFromFile, parseQuestionsFromText } from '../../services/fileParser';
 import type { Question } from '../../services/gameStore';
@@ -442,6 +442,22 @@ export default function HostDashboard() {
                     Bỏ chọn
                   </button>
                 )}
+                {filteredQuestions.length > 0 && (
+                  <button onClick={() => {
+                    if (!confirm(filterSubject ? `Bạn có chắc chắn muốn xóa TẤT CẢ câu hỏi môn "${filterSubject}"?` : 'Bạn có chắc chắn muốn xóa TẤT CẢ câu hỏi trong ngân hàng?')) return;
+                    if (filterSubject) {
+                      deleteQuestionsBySubject(filterSubject);
+                      setQuestions(prev => prev.filter(q => q.subject !== filterSubject));
+                    } else {
+                      deleteAllQuestions();
+                      setQuestions([]);
+                    }
+                    setSelectedQuestions([]);
+                  }}
+                    className="text-sm px-2 py-1 bg-red-100 text-red-600 rounded-lg font-bold hover:bg-red-200 transition whitespace-nowrap ml-2">
+                    Xóa tất cả
+                  </button>
+                )}
               </div>
             </div>
 
@@ -475,11 +491,14 @@ export default function HostDashboard() {
                         <MathText text={`${idx + 1}. ${q.content}`} className="leading-relaxed" />
                       </h3>
                       <div className="grid grid-cols-2 gap-2">
-                        {q.options.map((opt: string, i: number) => (
-                          <div key={i} className={`p-2 rounded-lg text-sm ${i === q.correctAnswer ? 'bg-green-100 border border-green-300 font-medium text-green-800' : 'bg-slate-100 border border-slate-200 text-slate-600'}`}>
-                            <MathText text={`${String.fromCharCode(65 + i)}. ${opt}`} />
-                          </div>
-                        ))}
+                        {q.options.map((opt: string, i: number) => {
+                          const cleanOpt = opt.replace(/^[A-D][\.\):\/\-]\s*/i, '').trim();
+                          return (
+                            <div key={i} className={`p-2 rounded-lg text-sm ${i === q.correctAnswer ? 'bg-green-100 border border-green-300 font-medium text-green-800' : 'bg-slate-100 border border-slate-200 text-slate-600'}`}>
+                              <MathText text={`${String.fromCharCode(65 + i)}. ${cleanOpt}`} />
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>

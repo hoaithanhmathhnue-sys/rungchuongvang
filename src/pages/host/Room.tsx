@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { QRCodeSVG } from 'qrcode.react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Users, Play, Trophy, Clock, CheckCircle2, XCircle } from 'lucide-react';
+import { Users, Play, Trophy, Clock, CheckCircle2, XCircle, ArrowRight, Ban } from 'lucide-react';
 import MathText from '../../components/MathText';
 import { Bar } from 'react-chartjs-2';
 import {
@@ -121,6 +121,19 @@ export default function HostRoom() {
     }
   }, [gameState]);
 
+  // Helper: get sorted leaderboard
+  const getLeaderboard = () => [...players].sort((a, b) => b.score - a.score);
+
+  // Helper: get active players who answered
+  const getAnsweredPlayers = () => {
+    const active = players.filter(p => !p.isEliminated);
+    return active.map(p => ({
+      ...p,
+      hasAnswered: answers[p.tabId] !== undefined,
+    }));
+  };
+
+  // ===== WAITING SCREEN =====
   if (gameState === 'waiting' || gameState === 'idle') {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white">
@@ -177,7 +190,12 @@ export default function HostRoom() {
     );
   }
 
+  // ===== PLAYING SCREEN =====
   if (gameState === 'playing' && currentQuestion) {
+    const answeredPlayers = getAnsweredPlayers();
+    const answeredCount = Object.keys(answers).length;
+    const activeCount = players.filter(p => !p.isEliminated).length;
+
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">
         <header className="bg-white shadow-sm p-4 flex justify-between items-center border-b border-slate-200">
@@ -192,7 +210,7 @@ export default function HostRoom() {
           </div>
           <div className="text-xl font-bold text-slate-600 flex items-center gap-2">
             <Users size={24} />
-            {Object.keys(answers).length} / {players.filter(p => !p.isEliminated).length}
+            {answeredCount} / {activeCount}
           </div>
         </header>
 
@@ -209,29 +227,60 @@ export default function HostRoom() {
                 'bg-yellow-500 border-yellow-600',
                 'bg-green-500 border-green-600'
               ];
+              const cleanOpt = opt.replace(/^[A-D][\.\/\)\:\-]\s*/i, '').trim();
               return (
                 <div key={i} className={`${colors[i]} text-white p-6 rounded-2xl shadow-lg border-b-8 flex items-center gap-4 text-2xl font-bold`}>
                   <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center shrink-0">
                     {String.fromCharCode(65 + i)}
                   </div>
-                  <MathText text={opt} />
+                  <MathText text={cleanOpt} />
                 </div>
               );
             })}
+          </div>
+
+          {/* Real-time: Ai đã trả lời */}
+          <div className="w-full max-w-4xl bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+            <h3 className="text-lg font-bold text-slate-700 mb-3 flex items-center gap-2">
+              <Users size={20} className="text-indigo-500" />
+              Trạng thái trả lời ({answeredCount}/{activeCount})
+            </h3>
+            <div className="flex flex-wrap gap-3">
+              {answeredPlayers.map(p => (
+                <div key={p.id} className={`flex items-center gap-2 px-4 py-2 rounded-full border-2 font-bold text-sm transition-all ${p.hasAnswered ? 'bg-green-50 border-green-400 text-green-700' : 'bg-slate-50 border-slate-200 text-slate-400 animate-pulse'}`}>
+                  <span className="text-lg">{p.avatar}</span>
+                  <span>{p.name}</span>
+                  {p.hasAnswered && <CheckCircle2 size={16} className="text-green-500" />}
+                </div>
+              ))}
+            </div>
           </div>
         </main>
       </div>
     );
   }
 
+  // ===== SHOWING ANSWER SCREEN =====
   if (gameState === 'showingAnswer' && currentQuestion && answerResult) {
     const chartData = getChartData();
-    
+    const leaderboard = getLeaderboard();
+    const correctAnswer = answerResult.correctAnswer;
+
+    // Phân loại người chơi
+    const advancedPlayers = leaderboard.filter(p => !p.isEliminated);
+    const eliminatedPlayers = leaderboard.filter(p => p.isEliminated);
+
+    // Ai vừa bị loại ở câu này?
+    const justEliminated = eliminatedPlayers.filter(p => {
+      const ans = answers[p.tabId]; 
+      return ans !== undefined && ans !== correctAnswer;
+    });
+
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">
         <header className="bg-white shadow-sm p-4 flex justify-between items-center border-b border-slate-200">
           <div className="text-xl font-bold text-slate-800">
-            Kết quả Câu {currentQuestion.index + 1}
+            Kết quả Câu {currentQuestion.index + 1}/{currentQuestion.total}
           </div>
           <button
             onClick={nextQuestion}
@@ -242,22 +291,24 @@ export default function HostRoom() {
           </button>
         </header>
 
-        <main className="flex-1 p-8 max-w-6xl w-full mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="space-y-6">
-            <MathText text={currentQuestion.content} tag="h2" className="text-3xl font-black text-slate-800" />
+        <main className="flex-1 p-6 max-w-7xl w-full mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Column 1: Question + Answers */}
+          <div className="space-y-4">
+            <MathText text={currentQuestion.content} tag="h2" className="text-2xl font-black text-slate-800" />
             
-            <div className="grid grid-cols-1 gap-4">
+            <div className="grid grid-cols-1 gap-3">
               {currentQuestion.options.map((opt: string, i: number) => {
-                const isCorrect = i === answerResult.correctAnswer;
+                const isCorrect = i === correctAnswer;
+                const cleanOpt = opt.replace(/^[A-D][\.\/\)\:\-]\s*/i, '').trim();
                 return (
-                  <div key={i} className={`p-4 rounded-xl border-2 flex items-center justify-between ${isCorrect ? 'bg-green-50 border-green-500 text-green-800' : 'bg-white border-slate-200 text-slate-500 opacity-60'}`}>
-                    <div className="flex items-center gap-4 text-xl font-bold">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white ${isCorrect ? 'bg-green-500' : 'bg-slate-300'}`}>
+                  <div key={i} className={`p-3 rounded-xl border-2 flex items-center justify-between ${isCorrect ? 'bg-green-50 border-green-500 text-green-800' : 'bg-white border-slate-200 text-slate-500 opacity-60'}`}>
+                    <div className="flex items-center gap-3 text-lg font-bold">
+                      <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white text-sm ${isCorrect ? 'bg-green-500' : 'bg-slate-300'}`}>
                         {String.fromCharCode(65 + i)}
                       </div>
-                      <MathText text={opt} />
+                      <MathText text={cleanOpt} />
                     </div>
-                    {isCorrect && <CheckCircle2 className="text-green-500" size={32} />}
+                    {isCorrect && <CheckCircle2 className="text-green-500" size={24} />}
                   </div>
                 );
               })}
@@ -266,15 +317,89 @@ export default function HostRoom() {
             {answerResult.explanation && (
               <div className="p-4 bg-blue-50 text-blue-800 rounded-xl border border-blue-200">
                 <p className="font-bold mb-1">Giải thích:</p>
-                <p>{answerResult.explanation}</p>
+                <p className="text-sm">{answerResult.explanation}</p>
+              </div>
+            )}
+
+            {/* Chart */}
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+              <h3 className="text-sm font-bold text-slate-600 mb-2">Thống kê chọn</h3>
+              <div className="h-[180px]">
+                {chartData && <Bar data={chartData} options={chartOptions} />}
+              </div>
+            </div>
+          </div>
+
+          {/* Column 2: Đi tiếp & Bị loại */}
+          <div className="space-y-4">
+            {/* Người đi tiếp */}
+            <div className="bg-green-50 p-4 rounded-2xl border border-green-200">
+              <h3 className="text-lg font-bold text-green-700 flex items-center gap-2 mb-3">
+                <ArrowRight size={20} /> Đi tiếp ({advancedPlayers.length})
+              </h3>
+              <div className="space-y-2 max-h-[250px] overflow-y-auto">
+                {advancedPlayers.map((p, i) => (
+                  <div key={p.id} className="flex items-center justify-between bg-white p-3 rounded-xl border border-green-100">
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg font-black text-green-600 w-6 text-center">{i + 1}</span>
+                      <span className="text-xl">{p.avatar}</span>
+                      <span className="font-bold text-slate-800">{p.name}</span>
+                    </div>
+                    <span className="font-black text-green-600">{p.score} đ</span>
+                  </div>
+                ))}
+                {advancedPlayers.length === 0 && (
+                  <p className="text-sm text-green-500 text-center py-2">Không có ai đi tiếp</p>
+                )}
+              </div>
+            </div>
+
+            {/* Người bị loại */}
+            {eliminatedPlayers.length > 0 && (
+              <div className="bg-red-50 p-4 rounded-2xl border border-red-200">
+                <h3 className="text-lg font-bold text-red-600 flex items-center gap-2 mb-3">
+                  <Ban size={20} /> Bị loại ({eliminatedPlayers.length})
+                </h3>
+                <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                  {eliminatedPlayers.map(p => {
+                    const isJust = justEliminated.some(j => j.id === p.id);
+                    return (
+                      <div key={p.id} className={`flex items-center justify-between p-3 rounded-xl border ${isJust ? 'bg-red-100 border-red-300 ring-2 ring-red-400' : 'bg-white border-red-100'}`}>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xl opacity-50">{p.avatar}</span>
+                          <span className={`font-bold ${isJust ? 'text-red-700' : 'text-slate-500'}`}>{p.name}</span>
+                          {isJust && <span className="text-xs bg-red-500 text-white px-2 py-0.5 rounded-full font-bold">VỪA LOẠI</span>}
+                        </div>
+                        <span className="font-bold text-slate-400">{p.score} đ</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
 
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
-            <h3 className="text-xl font-bold text-slate-800 mb-4">Thống kê câu trả lời</h3>
-            <div className="flex-1 min-h-[300px]">
-              {chartData && <Bar data={chartData} options={chartOptions} />}
+          {/* Column 3: Bảng xếp hạng tổng */}
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 h-fit">
+            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-4">
+              <Trophy size={20} className="text-yellow-500" /> Bảng xếp hạng
+            </h3>
+            <div className="space-y-2 max-h-[500px] overflow-y-auto">
+              {leaderboard.map((p, i) => (
+                <div key={p.id} className={`flex items-center justify-between p-3 rounded-xl transition ${p.isEliminated ? 'bg-slate-100 opacity-50' : i === 0 ? 'bg-yellow-50 border border-yellow-300' : i === 1 ? 'bg-slate-50 border border-slate-300' : i === 2 ? 'bg-orange-50 border border-orange-200' : 'bg-white border border-slate-100'}`}>
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg font-black w-6 text-center text-slate-500">
+                      {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
+                    </span>
+                    <span className="text-lg">{p.avatar}</span>
+                    <div>
+                      <span className={`font-bold text-sm ${p.isEliminated ? 'text-slate-400 line-through' : 'text-slate-800'}`}>{p.name}</span>
+                      <span className="block text-xs text-slate-400">{p.correctAnswers} câu đúng</span>
+                    </div>
+                  </div>
+                  <span className={`font-black text-lg ${p.isEliminated ? 'text-slate-400' : 'text-orange-500'}`}>{p.score}</span>
+                </div>
+              ))}
             </div>
           </div>
         </main>
@@ -282,8 +407,9 @@ export default function HostRoom() {
     );
   }
 
+  // ===== FINISHED SCREEN =====
   if (gameState === 'finished') {
-    const topPlayers = [...players].sort((a, b) => b.score - a.score).slice(0, 10);
+    const topPlayers = getLeaderboard().slice(0, 10);
     
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center p-8 text-white">
@@ -300,14 +426,17 @@ export default function HostRoom() {
                 initial={{ x: -50, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 transition={{ delay: i * 0.1 }}
-                className={`flex items-center justify-between p-4 rounded-2xl ${i === 0 ? 'bg-gradient-to-r from-yellow-400 to-yellow-600 text-slate-900 scale-105 shadow-xl z-10 relative' : i === 1 ? 'bg-slate-300 text-slate-800' : i === 2 ? 'bg-orange-300 text-slate-800' : 'bg-white/5 text-white'}`}
+                className={`flex items-center justify-between p-4 rounded-2xl ${i === 0 ? 'bg-gradient-to-r from-yellow-400 to-yellow-600 text-slate-900 scale-105 shadow-xl z-10 relative' : i === 1 ? 'bg-slate-300 text-slate-800' : i === 2 ? 'bg-orange-300 text-slate-800' : p.isEliminated ? 'bg-white/5 text-white/50' : 'bg-white/5 text-white'}`}
               >
                 <div className="flex items-center gap-6">
                   <div className="text-3xl font-black w-12 text-center">
                     {i === 0 ? '👑' : i + 1}
                   </div>
                   <div className="text-4xl">{p.avatar}</div>
-                  <div className="text-2xl font-bold">{p.name}</div>
+                  <div>
+                    <div className={`text-2xl font-bold ${p.isEliminated ? 'line-through' : ''}`}>{p.name}</div>
+                    {p.isEliminated && <span className="text-xs bg-red-500/80 px-2 py-0.5 rounded-full text-white">Đã bị loại</span>}
+                  </div>
                 </div>
                 <div className="text-right">
                   <div className="text-3xl font-black">{p.score}</div>

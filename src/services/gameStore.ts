@@ -141,3 +141,7 @@ export function deleteQuestionsBySubject(subject: string): void {
   const questions = loadQuestions().filter(q => q.subject !== subject);
   saveQuestions(questions);
 }
+
+export function deleteAllQuestions(): void {
+  saveQuestions([]);
+}
