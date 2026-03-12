@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router';
 import { QRCodeSVG } from 'qrcode.react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Users, Play, Trophy, Clock, CheckCircle2, XCircle } from 'lucide-react';
+import MathText from '../../components/MathText';
 import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -197,9 +198,7 @@ export default function HostRoom() {
 
         <main className="flex-1 p-8 max-w-6xl w-full mx-auto flex flex-col items-center justify-center gap-8">
           <div className="w-full text-center">
-            <h2 className="text-5xl font-black text-slate-800 leading-tight">
-              {currentQuestion.content}
-            </h2>
+            <MathText text={currentQuestion.content} tag="h2" className="text-5xl font-black text-slate-800 leading-tight" />
           </div>
 
           <div className="grid grid-cols-2 gap-6 w-full max-w-4xl">
@@ -215,7 +214,7 @@ export default function HostRoom() {
                   <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center shrink-0">
                     {String.fromCharCode(65 + i)}
                   </div>
-                  {opt}
+                  <MathText text={opt} />
                 </div>
               );
             })}
@@ -245,7 +244,7 @@ export default function HostRoom() {
 
         <main className="flex-1 p-8 max-w-6xl w-full mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div className="space-y-6">
-            <h2 className="text-3xl font-black text-slate-800">{currentQuestion.content}</h2>
+            <MathText text={currentQuestion.content} tag="h2" className="text-3xl font-black text-slate-800" />
             
             <div className="grid grid-cols-1 gap-4">
               {currentQuestion.options.map((opt: string, i: number) => {
@@ -256,7 +255,7 @@ export default function HostRoom() {
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white ${isCorrect ? 'bg-green-500' : 'bg-slate-300'}`}>
                         {String.fromCharCode(65 + i)}
                       </div>
-                      {opt}
+                      <MathText text={opt} />
                     </div>
                     {isCorrect && <CheckCircle2 className="text-green-500" size={32} />}
                   </div>

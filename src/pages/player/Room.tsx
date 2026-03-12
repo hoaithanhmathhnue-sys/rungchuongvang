@@ -3,6 +3,7 @@ import { useParams, useLocation, useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
 import { Clock, CheckCircle2, XCircle, Trophy, AlertTriangle } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import MathText from '../../components/MathText';
 import { useGame } from '../../contexts/GameContext';
 
 export default function PlayerRoom() {
@@ -150,9 +151,7 @@ export default function PlayerRoom() {
             <span className="text-sm font-bold text-slate-400 uppercase tracking-wider block mb-2">
               Câu {currentQuestion.index + 1}
             </span>
-            <h2 className="text-2xl font-black text-slate-800 leading-snug">
-              {currentQuestion.content}
-            </h2>
+            <MathText text={currentQuestion.content} tag="h2" className="text-2xl font-black text-slate-800 leading-snug" />
           </div>
 
           <div className="grid grid-cols-1 gap-4 w-full">
@@ -170,7 +169,7 @@ export default function PlayerRoom() {
                   <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
                     {String.fromCharCode(65 + i)}
                   </div>
-                  <span className="text-left">{opt}</span>
+                  <MathText text={opt} className="text-left" />
                 </button>
               );
             })}

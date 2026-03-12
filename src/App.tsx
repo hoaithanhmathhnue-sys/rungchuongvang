@@ -16,6 +16,9 @@ import { KeyRound } from 'lucide-react';
 function AppHeader() {
   const { apiKey, showSettings } = useApiKey();
 
+  // Chỉ hiện nút Settings khi đã có API key
+  if (!apiKey) return null;
+
   return (
     <div className="fixed top-0 right-0 z-40 p-3">
       <button
@@ -23,14 +26,7 @@ function AppHeader() {
         className="flex items-center gap-2 px-4 py-2 bg-white/90 backdrop-blur-sm rounded-full shadow-lg border border-slate-200 hover:bg-white transition group"
       >
         <KeyRound size={18} className="text-indigo-600" />
-        <span className="text-sm font-bold text-slate-700">
-          {apiKey ? 'API Key ✓' : 'Settings'}
-        </span>
-        {!apiKey && (
-          <span className="text-xs font-bold text-red-500 animate-pulse">
-            Lấy API key để sử dụng app
-          </span>
-        )}
+        <span className="text-sm font-bold text-slate-700">API Key ✓</span>
       </button>
     </div>
   );

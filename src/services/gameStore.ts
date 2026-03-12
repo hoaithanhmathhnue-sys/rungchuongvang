@@ -13,9 +13,46 @@ export interface Question {
 }
 
 const STORAGE_KEY = 'rcv_questions';
+const SUBJECTS_KEY = 'rcv_subjects';
 
 let nextId = 1;
 
+// ===== Subjects =====
+const DEFAULT_SUBJECTS = [
+  'Toán học', 'Vật lý', 'Hóa học', 'Sinh học',
+  'Lịch sử', 'Địa lý', 'Ngữ văn', 'Tiếng Anh',
+  'GDCD', 'Tin học', 'Khoa học', 'Tổng hợp'
+];
+
+export function getSubjects(): string[] {
+  try {
+    const data = localStorage.getItem(SUBJECTS_KEY);
+    if (data) return JSON.parse(data);
+  } catch (e) { /* ignore */ }
+  saveSubjects(DEFAULT_SUBJECTS);
+  return [...DEFAULT_SUBJECTS];
+}
+
+export function saveSubjects(subjects: string[]): void {
+  localStorage.setItem(SUBJECTS_KEY, JSON.stringify(subjects));
+}
+
+export function addSubject(name: string): string[] {
+  const subjects = getSubjects();
+  const trimmed = name.trim();
+  if (!trimmed || subjects.includes(trimmed)) return subjects;
+  subjects.push(trimmed);
+  saveSubjects(subjects);
+  return subjects;
+}
+
+export function removeSubject(name: string): string[] {
+  const subjects = getSubjects().filter(s => s !== name);
+  saveSubjects(subjects);
+  return subjects;
+}
+
+// ===== Questions =====
 function loadQuestions(): Question[] {
   try {
     const data = localStorage.getItem(STORAGE_KEY);
@@ -86,7 +123,21 @@ export function addQuestions(items: Omit<Question, 'id'>[]): Question[] {
   return newQuestions;
 }
 
+export function updateQuestion(id: number, updates: Partial<Omit<Question, 'id'>>): Question | null {
+  const questions = loadQuestions();
+  const idx = questions.findIndex(q => q.id === id);
+  if (idx === -1) return null;
+  questions[idx] = { ...questions[idx], ...updates };
+  saveQuestions(questions);
+  return questions[idx];
+}
+
 export function deleteQuestion(id: number): void {
   const questions = loadQuestions().filter(q => q.id !== id);
+  saveQuestions(questions);
+}
+
+export function deleteQuestionsBySubject(subject: string): void {
+  const questions = loadQuestions().filter(q => q.subject !== subject);
   saveQuestions(questions);
 }

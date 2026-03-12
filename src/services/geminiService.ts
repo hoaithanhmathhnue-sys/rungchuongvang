@@ -13,6 +13,7 @@ export interface GeneratedQuestion {
   options: string[];
   correctAnswer: number;
   explanation: string;
+  difficulty?: string;
 }
 
 export async function generateQuestions(
@@ -21,12 +22,17 @@ export async function generateQuestions(
   count: number,
   difficulty: string
 ): Promise<GeneratedQuestion[]> {
-  const prompt = `Tạo ${count} câu hỏi trắc nghiệm về chủ đề "${topic}" với độ khó ${difficulty}.
+  const difficultyText = difficulty === 'mixed'
+    ? 'hỗn hợp (bao gồm cả dễ, trung bình và khó)'
+    : difficulty === 'easy' ? 'dễ' : difficulty === 'medium' ? 'trung bình' : 'khó';
+
+  const prompt = `Tạo ${count} câu hỏi trắc nghiệm về chủ đề "${topic}" với độ khó ${difficultyText}.
 Yêu cầu:
 - Mỗi câu có 4 đáp án
 - Chỉ 1 đáp án đúng
 - Phù hợp với học sinh THCS/THPT
 - Có giải thích ngắn gọn
+- Giữ nguyên công thức toán dạng LaTeX $...$
 
 Trả về JSON format:
 [
@@ -34,7 +40,8 @@ Trả về JSON format:
     "content": "Câu hỏi...",
     "options": ["A", "B", "C", "D"],
     "correctAnswer": 0,
-    "explanation": "Giải thích..."
+    "explanation": "Giải thích...",
+    "difficulty": "easy|medium|hard"
   }
 ]`;
 
