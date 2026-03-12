@@ -10,7 +10,7 @@ export interface Player {
   score: number;
   correctAnswers: number;
   isEliminated: boolean;
-  tabId: string; // Firebase uid
+  tabId: string;
 }
 
 export interface RoomSettings {
@@ -31,20 +31,19 @@ export interface Room {
   answers: Record<string, number>;
   answerTimes: Record<string, number>;
   questionStartTime: number;
+  /** Flag để tránh tính điểm 2 lần cho cùng 1 câu */
+  answerRevealed?: boolean;
 }
 
 interface GameContextType {
   tabId: string;
   room: Room | null;
-  // Host actions
   createRoom: (questions: Question[], settings: RoomSettings) => Promise<string>;
   startGame: () => void;
   nextQuestion: () => void;
   showAnswer: () => void;
-  // Player actions
   joinRoom: (pin: string, name: string, avatar: string) => Promise<boolean>;
   submitAnswer: (answerIndex: number) => void;
-  // Derived state
   players: Player[];
   currentQuestion: any;
   gameState: 'idle' | 'waiting' | 'playing' | 'showingAnswer' | 'finished';
@@ -54,10 +53,7 @@ interface GameContextType {
 }
 
 const GameContext = createContext<GameContextType>(null!);
-
-export function useGame() {
-  return useContext(GameContext);
-}
+export function useGame() { return useContext(GameContext); }
 
 function generatePin() {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -72,51 +68,45 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [myPlayer, setMyPlayer] = useState<Player | null>(null);
 
-  const roomRef_ = useRef(room);
-  roomRef_.current = room;
   const unsubscribeRef = useRef<(() => void) | null>(null);
+  // Guard chống gọi showAnswer 2 lần
+  const showAnswerRunningRef = useRef(false);
+  // Guard chống submit 2 lần (sync, không async)
+  const submitLockRef = useRef(false);
 
-  // Init auth
   useEffect(() => {
-    waitForAuth().then(uid => {
-      setTabId(uid);
-    });
-    return () => {
-      if (unsubscribeRef.current) unsubscribeRef.current();
-    };
+    waitForAuth().then(uid => setTabId(uid));
+    return () => { if (unsubscribeRef.current) unsubscribeRef.current(); };
   }, []);
 
-  const isHost = room?.hostTabId === tabId;
+  const isHostRef = useRef(false);
+  const tabIdRef = useRef('');
+  tabIdRef.current = tabId;
 
   // Listen to room changes from Firebase
   const listenToRoom = useCallback((pin: string) => {
-    // Unsubscribe previous listener
-    if (unsubscribeRef.current) {
-      unsubscribeRef.current();
-    }
+    if (unsubscribeRef.current) unsubscribeRef.current();
 
     const roomDbRef = ref(database, `rooms/${pin}`);
     const unsub = onValue(roomDbRef, (snapshot) => {
       const data = snapshot.val() as Room | null;
-      if (!data) {
-        console.log('[Game] Room deleted');
-        return;
-      }
+      if (!data) return;
+
+      const uid = getCurrentUserId();
+      isHostRef.current = data.hostTabId === uid;
 
       setRoom(data);
 
-      // Update game state based on room status
       if (data.status === 'finished') {
         setGameState('finished');
+        return;
       }
 
-      // Update answers
-      if (data.answers) {
-        setAnswers(data.answers);
-      }
+      // Cập nhật answers
+      setAnswers(data.answers || {});
 
-      // Update current question
-      if (data.currentQuestionIndex >= 0 && data.questions && data.currentQuestionIndex < data.questions.length) {
+      // Cập nhật câu hỏi hiện tại
+      if (data.currentQuestionIndex >= 0 && data.questions?.length > data.currentQuestionIndex) {
         const q = data.questions[data.currentQuestionIndex];
         setCurrentQuestion({
           index: data.currentQuestionIndex,
@@ -124,21 +114,30 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           content: q.content,
           options: q.options,
           timeLimit: data.settings.timePerQuestion,
+          points: q.points || 100,
         });
       }
 
-      // Update myPlayer
-      const players = data.players || {};
-      const me = Object.values(players).find(p => p.tabId === getCurrentUserId());
-      if (me) {
-        setMyPlayer(me);
+      // Cập nhật trạng thái game dựa trên Firebase
+      if (data.answerResult && data.answerRevealed) {
+        // FIX BUG 7: dùng data.players từ Firebase (fresh), không phải stale closure
+        const playersArray = Object.values(data.players || {});
+        setAnswerResult({ ...data.answerResult, players: playersArray });
+        setGameState('showingAnswer');
+      } else if (data.status === 'playing') {
+        // Chỉ chuyển sang playing nếu chưa showingAnswer
+        setGameState(prev => (prev === 'showingAnswer' ? 'showingAnswer' : 'playing'));
       }
+
+      // Cập nhật myPlayer từ Firebase (điểm số mới nhất)
+      const me = Object.values(data.players || {}).find(p => p.tabId === uid);
+      if (me) setMyPlayer(me);
     });
 
     unsubscribeRef.current = unsub;
   }, []);
 
-  // ===== Host Actions =====
+  // ===== HOST ACTIONS =====
   const createRoom = useCallback(async (questions: Question[], settings: RoomSettings): Promise<string> => {
     const uid = await waitForAuth();
     const pin = generatePin();
@@ -154,8 +153,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       answers: {},
       answerTimes: {},
       questionStartTime: 0,
+      answerRevealed: false,
     };
-
     await set(ref(database, `rooms/${pin}`), newRoom);
     setRoom(newRoom);
     setGameState('waiting');
@@ -164,65 +163,76 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   }, [listenToRoom]);
 
   const startGame = useCallback(async () => {
-    if (!room || !isHost) return;
+    if (!room) return;
     const pin = room.pin;
+    showAnswerRunningRef.current = false;
+    submitLockRef.current = false;
 
-    const q = room.questions[0];
-    if (!q) return;
-
-    const updates: any = {
+    await update(ref(database), {
       [`rooms/${pin}/status`]: 'playing',
       [`rooms/${pin}/currentQuestionIndex`]: 0,
       [`rooms/${pin}/answers`]: {},
       [`rooms/${pin}/answerTimes`]: {},
       [`rooms/${pin}/questionStartTime`]: Date.now(),
-    };
-
-    const dbRef = ref(database);
-    await update(dbRef, updates);
+      [`rooms/${pin}/answerResult`]: null,
+      [`rooms/${pin}/answerRevealed`]: false,
+    });
     setGameState('playing');
     setAnswers({});
-  }, [room, isHost]);
+    setAnswerResult(null);
+  }, [room]);
 
   const nextQuestion = useCallback(async () => {
-    if (!room || !isHost) return;
+    if (!room) return;
     const pin = room.pin;
     const nextIdx = room.currentQuestionIndex + 1;
+    showAnswerRunningRef.current = false;
+    submitLockRef.current = false;
 
     if (nextIdx < room.questions.length) {
-      const updates: any = {
+      await update(ref(database), {
         [`rooms/${pin}/currentQuestionIndex`]: nextIdx,
         [`rooms/${pin}/answers`]: {},
         [`rooms/${pin}/answerTimes`]: {},
         [`rooms/${pin}/questionStartTime`]: Date.now(),
-      };
-      await update(ref(database), updates);
+        [`rooms/${pin}/answerResult`]: null,
+        [`rooms/${pin}/answerRevealed`]: false,
+      });
       setGameState('playing');
       setAnswers({});
       setAnswerResult(null);
     } else {
-      // Game finished
-      await update(ref(database), {
-        [`rooms/${pin}/status`]: 'finished',
-      });
+      await update(ref(database), { [`rooms/${pin}/status`]: 'finished' });
       setGameState('finished');
     }
-  }, [room, isHost]);
+  }, [room]);
 
-  const showAnswerRunningRef = useRef(false);
-
+  /**
+   * showAnswer – tính điểm và công bố đáp án.
+   *
+   * FIX BUG 3+4: Không gọi showAnswer từ trong setInterval callback (stale closure).
+   *   Host Room phải gọi showAnswer() từ useEffect riêng theo ref.
+   * FIX BUG: Dùng flag `answerRevealed` trên Firebase để chặn double-scoring.
+   */
   const showAnswer = useCallback(async () => {
-    if (!room || !isHost) return;
-    // Chặn gọi 2 lần liên tiếp (double-click, race condition)
+    // Chặn double-call
     if (showAnswerRunningRef.current) return;
     showAnswerRunningRef.current = true;
 
-    const pin = room.pin;
+    // Lấy pin từ room ref để tránh stale
+    const pin = room?.pin;
+    if (!pin) { showAnswerRunningRef.current = false; return; }
 
-    // Fetch FRESH data từ Firebase để tránh dùng stale React state
+    // Fetch fresh data từ Firebase
     const freshSnap = await get(ref(database, `rooms/${pin}`));
     if (!freshSnap.exists()) { showAnswerRunningRef.current = false; return; }
     const freshRoom = freshSnap.val() as Room;
+
+    // FIX: Kiểm tra flag answerRevealed để chặn tính điểm 2 lần
+    if (freshRoom.answerRevealed) {
+      showAnswerRunningRef.current = false;
+      return;
+    }
 
     const q = freshRoom.questions[freshRoom.currentQuestionIndex];
     if (!q) { showAnswerRunningRef.current = false; return; }
@@ -233,26 +243,20 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const roomTimes = freshRoom.answerTimes || {};
 
     const updatedPlayers: Record<string, Player> = {};
-    const entries = Object.entries(playersObj) as [string, Player][];
-    for (const [key, p] of entries) {
+    for (const [key, p] of Object.entries(playersObj) as [string, Player][]) {
       if (p.isEliminated) {
         updatedPlayers[key] = p;
         continue;
       }
-
       const answer = roomAnswers[p.tabId];
       if (answer === correctIndex) {
         let points = q.points || 100;
         if (freshRoom.settings.speedBonus) {
-          const timeTaken = roomTimes[p.tabId] || freshRoom.settings.timePerQuestion * 1000;
-          const timeRatio = Math.max(0, 1 - (timeTaken / (freshRoom.settings.timePerQuestion * 1000)));
+          const timeTaken = roomTimes[p.tabId] ?? (freshRoom.settings.timePerQuestion * 1000);
+          const timeRatio = Math.max(0, 1 - timeTaken / (freshRoom.settings.timePerQuestion * 1000));
           points += Math.floor(timeRatio * 50);
         }
-        updatedPlayers[key] = {
-          ...p,
-          score: p.score + points,
-          correctAnswers: p.correctAnswers + 1,
-        };
+        updatedPlayers[key] = { ...p, score: p.score + points, correctAnswers: p.correctAnswers + 1 };
       } else if (freshRoom.settings.eliminationMode && answer !== undefined) {
         updatedPlayers[key] = { ...p, isEliminated: true };
       } else {
@@ -260,140 +264,80 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Write updated players and answer result to Firebase
     const result = {
       correctAnswer: correctIndex,
       explanation: q.explanation,
       answers: roomAnswers,
     };
 
+    // FIX: Set answerRevealed = true CÙNG LÚC với kết quả để chặn race condition
     await update(ref(database), {
       [`rooms/${pin}/players`]: updatedPlayers,
       [`rooms/${pin}/answerResult`]: result,
+      [`rooms/${pin}/answerRevealed`]: true,
     });
 
     setAnswerResult({ ...result, players: Object.values(updatedPlayers) });
     setGameState('showingAnswer');
     showAnswerRunningRef.current = false;
-  }, [room, isHost]);
+  }, [room]);
 
-  // ===== Player Actions =====
+  // ===== PLAYER ACTIONS =====
   const joinRoom = useCallback(async (pin: string, name: string, avatar: string): Promise<boolean> => {
     const uid = await waitForAuth();
-
-    // Check room exists
     const snapshot = await get(ref(database, `rooms/${pin}`));
     if (!snapshot.exists()) return false;
-
     const roomData = snapshot.val() as Room;
     if (roomData.status !== 'waiting') return false;
 
     const player: Player = {
       id: `player_${Date.now()}`,
-      name,
-      avatar,
-      score: 0,
-      correctAnswers: 0,
-      isEliminated: false,
+      name, avatar,
+      score: 0, correctAnswers: 0, isEliminated: false,
       tabId: uid,
     };
-
-    // Add player to room in Firebase
     await set(ref(database, `rooms/${pin}/players/${uid}`), player);
-
     setMyPlayer(player);
     setRoom(roomData);
     setGameState('waiting');
     listenToRoom(pin);
+    submitLockRef.current = false;
     return true;
   }, [listenToRoom]);
 
+  /**
+   * submitAnswer – ghi câu trả lời lên Firebase.
+   *
+   * FIX BUG 5: Dùng submitLockRef (sync) thay vì async get() check.
+   *   Async check có race window: player bấm 2 lần cực nhanh, cả 2 đều pass get() trước khi set() xong.
+   */
   const submitAnswer = useCallback(async (answerIndex: number) => {
     if (!room) return;
+    // Sync lock – chặn ngay không cần await
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
+
     const uid = getCurrentUserId();
-
-    // Kiểm tra xem player đã submit chưa bằng cách đọc trực tiếp từ Firebase
-    const existingSnap = await get(ref(database, `rooms/${room.pin}/answers/${uid}`));
-    if (existingSnap.exists()) {
-      // Đã submit rồi, không ghi đè
-      console.warn('[submitAnswer] Đã submit rồi, bỏ qua.');
-      return;
-    }
-
     const timeTaken = Date.now() - (room.questionStartTime || Date.now());
-    await update(ref(database), {
-      [`rooms/${room.pin}/answers/${uid}`]: answerIndex,
-      [`rooms/${room.pin}/answerTimes/${uid}`]: timeTaken,
-    });
+    try {
+      await update(ref(database), {
+        [`rooms/${room.pin}/answers/${uid}`]: answerIndex,
+        [`rooms/${room.pin}/answerTimes/${uid}`]: timeTaken,
+      });
+    } catch (err) {
+      console.error('[submitAnswer] Error:', err);
+      submitLockRef.current = false; // unlock nếu lỗi để user thử lại
+    }
   }, [room]);
 
-  // Derive players array from room.players object
   const players = room?.players ? Object.values(room.players) : [];
-
-  // Listen to answerResult changes
-  useEffect(() => {
-    if (!room?.pin) return;
-    const resultRef = ref(database, `rooms/${room.pin}/answerResult`);
-    const unsub = onValue(resultRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const playersArray = room?.players ? Object.values(room.players) : [];
-        setAnswerResult({ ...data, players: playersArray });
-        setGameState('showingAnswer');
-      }
-    });
-    return () => unsub();
-  }, [room?.pin]);
-
-  // Listen to status changes for player side
-  useEffect(() => {
-    if (!room?.pin) return;
-    const statusRef = ref(database, `rooms/${room.pin}/status`);
-    const unsub = onValue(statusRef, (snapshot) => {
-      const status = snapshot.val();
-      if (status === 'playing' && gameState === 'waiting') {
-        setGameState('playing');
-      } else if (status === 'finished') {
-        setGameState('finished');
-      }
-    });
-    return () => unsub();
-  }, [room?.pin, gameState]);
-
-  // Listen to currentQuestionIndex changes to reset showingAnswer
-  useEffect(() => {
-    if (!room?.pin) return;
-    const qIdxRef = ref(database, `rooms/${room.pin}/currentQuestionIndex`);
-    const unsub = onValue(qIdxRef, (snapshot) => {
-      const idx = snapshot.val();
-      if (typeof idx === 'number' && idx >= 0) {
-        // New question arrived, switch to playing
-        if (gameState === 'showingAnswer' || gameState === 'waiting') {
-          setGameState('playing');
-          setAnswerResult(null);
-          setAnswers({});
-        }
-      }
-    });
-    return () => unsub();
-  }, [room?.pin, gameState]);
 
   return (
     <GameContext.Provider value={{
-      tabId,
-      room,
-      createRoom,
-      startGame,
-      nextQuestion,
-      showAnswer,
-      joinRoom,
-      submitAnswer,
-      players,
-      currentQuestion,
-      gameState,
-      answerResult,
-      answers,
-      myPlayer,
+      tabId, room,
+      createRoom, startGame, nextQuestion, showAnswer,
+      joinRoom, submitAnswer,
+      players, currentQuestion, gameState, answerResult, answers, myPlayer,
     }}>
       {children}
     </GameContext.Provider>

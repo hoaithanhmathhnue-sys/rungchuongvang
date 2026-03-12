@@ -1,92 +1,77 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
-import { Clock, CheckCircle2, XCircle, Trophy, AlertTriangle, Send } from 'lucide-react';
+import { Clock, CheckCircle2, XCircle, Trophy, AlertTriangle, Send, MinusCircle } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import MathText from '../../components/MathText';
 import { useGame } from '../../contexts/GameContext';
+
+const ANSWER_COLORS = [
+  'bg-red-500 border-red-600',
+  'bg-blue-500 border-blue-600',
+  'bg-yellow-500 border-yellow-600',
+  'bg-green-500 border-green-600',
+];
 
 export default function PlayerRoom() {
   const { pin } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const {
-    gameState,
-    currentQuestion,
-    answerResult,
-    myPlayer,
-    joinRoom,
-    submitAnswer,
-  } = useGame();
-  
+  const { gameState, currentQuestion, answerResult, myPlayer, joinRoom, submitAnswer } = useGame();
+
   const [timeLeft, setTimeLeft] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [joined, setJoined] = useState(false);
   const [showAlreadyAnswered, setShowAlreadyAnswered] = useState(false);
-  
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Join room on mount
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // FIX BUG 5: Sync lock để chặn double-submit tuyệt đối
+  const hasSubmittedRef = useRef(false);
+  // Lưu questionIndex của lần submit để reset đúng
+  const submittedForQuestionRef = useRef(-1);
+
+  // Join room
   useEffect(() => {
     const { name, avatar } = location.state || {};
-    if (!name || !pin) {
-      navigate('/play');
-      return;
-    }
-
+    if (!name || !pin) { navigate('/play'); return; }
     const doJoin = async () => {
       const success = await joinRoom(pin, name, avatar);
-      if (!success) {
-        alert('Phòng không tồn tại hoặc game đã bắt đầu!');
-        navigate('/play');
-      } else {
-        setJoined(true);
-      }
+      if (!success) { alert('Phòng không tồn tại hoặc game đã bắt đầu!'); navigate('/play'); }
+      else setJoined(true);
     };
     doJoin();
   }, [pin, location.state, navigate]);
 
-  // Timer for questions
+  // Reset state khi câu hỏi mới
   useEffect(() => {
     if (gameState === 'playing' && currentQuestion) {
+      // Chỉ reset nếu đây là câu hỏi mới
+      if (submittedForQuestionRef.current !== currentQuestion.index) {
+        setSelectedAnswer(null);
+        hasSubmittedRef.current = false;
+        submittedForQuestionRef.current = currentQuestion.index;
+      }
+
       setTimeLeft(currentQuestion.timeLimit);
-      setSelectedAnswer(null);
-      hasSubmittedRef.current = false; // Reset khi câu hỏi mới
-      
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            clearInterval(timerRef.current!);
-            return 0;
-          }
+        setTimeLeft(prev => {
+          if (prev <= 1) { clearInterval(timerRef.current!); return 0; }
           return prev - 1;
         });
       }, 1000);
     }
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [gameState, currentQuestion]);
 
-  // Confetti for top 3 finishers
   useEffect(() => {
     if (gameState === 'finished' && myPlayer) {
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
+      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
     }
   }, [gameState, myPlayer]);
 
-  // Dùng ref để chặn tuyệt đối việc submit nhiều lần (tránh race condition với state)
-  const hasSubmittedRef = useRef<boolean>(false);
-
   const handleSubmitAnswer = (index: number) => {
     if (myPlayer?.isEliminated) return;
-    // Nếu đã submit rồi → hiện popup thay vì submit lại
     if (hasSubmittedRef.current || selectedAnswer !== null) {
       setShowAlreadyAnswered(true);
       setTimeout(() => setShowAlreadyAnswered(false), 1500);
@@ -98,9 +83,14 @@ export default function PlayerRoom() {
   };
 
   if (!joined || !myPlayer) {
-    return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white font-bold text-2xl">Đang kết nối...</div>;
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white font-bold text-2xl">
+        Đang kết nối...
+      </div>
+    );
   }
 
+  // ===== WAITING =====
   if (gameState === 'waiting' || gameState === 'idle') {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white text-center">
@@ -119,7 +109,8 @@ export default function PlayerRoom() {
     );
   }
 
-  if (myPlayer.isEliminated) {
+  // ===== BỊ LOẠI =====
+  if (myPlayer.isEliminated && gameState !== 'showingAnswer' && gameState !== 'finished') {
     return (
       <div className="min-h-screen bg-red-900 flex flex-col items-center justify-center p-6 text-white text-center">
         <AlertTriangle size={80} className="text-red-400 mb-6" />
@@ -133,16 +124,9 @@ export default function PlayerRoom() {
     );
   }
 
-  // ===== PLAYING: Đã chọn đáp án → Hiện "Đã ghi nhận" =====
+  // ===== PLAYING =====
   if (gameState === 'playing' && currentQuestion) {
-    const colors = [
-      'bg-red-500 hover:bg-red-600 border-red-600',
-      'bg-blue-500 hover:bg-blue-600 border-blue-600',
-      'bg-yellow-500 hover:bg-yellow-600 border-yellow-600',
-      'bg-green-500 hover:bg-green-600 border-green-600'
-    ];
-
-    // Nếu đã chọn đáp án → Hiện màn xác nhận
+    // Đã chọn → Màn chờ
     if (selectedAnswer !== null) {
       const selectedColor = ['bg-red-500', 'bg-blue-500', 'bg-yellow-500', 'bg-green-500'][selectedAnswer];
       return (
@@ -160,11 +144,9 @@ export default function PlayerRoom() {
               <span className={`text-xl font-black ${timeLeft <= 5 ? 'text-red-500' : 'text-slate-700'}`}>{timeLeft}</span>
             </div>
           </header>
-
           <main className="flex-1 flex flex-col items-center justify-center gap-8 p-6">
             <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
+              initial={{ scale: 0 }} animate={{ scale: 1 }}
               transition={{ type: 'spring', stiffness: 200 }}
               className="text-center"
             >
@@ -176,9 +158,7 @@ export default function PlayerRoom() {
                 Bạn đã chọn <span className={`font-black text-2xl ${selectedColor.replace('bg-', 'text-')}`}>{String.fromCharCode(65 + selectedAnswer)}</span>
               </p>
             </motion.div>
-
             <motion.p
-              initial={{ opacity: 0 }}
               animate={{ opacity: [0.3, 1] }}
               transition={{ repeat: Infinity, duration: 1.5 }}
               className="text-lg text-slate-400 font-bold"
@@ -190,16 +170,13 @@ export default function PlayerRoom() {
       );
     }
 
-    // Chưa chọn → Hiện câu hỏi và đáp án
+    // Chưa chọn → Hiện đáp án
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">
-        {/* Popup "Đã trả lời" */}
         <AnimatePresence>
           {showAlreadyAnswered && (
             <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
+              initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
               className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-slate-800 text-white px-6 py-3 rounded-full shadow-xl font-bold text-lg flex items-center gap-2"
             >
               <CheckCircle2 size={20} className="text-green-400" />
@@ -240,21 +217,20 @@ export default function PlayerRoom() {
               const isSelected = selectedAnswer === i;
               const hasSelected = selectedAnswer !== null;
 
-              // Ẩn đáp án không được chọn sau khi học sinh đã chọn
               if (hasSelected && !isSelected) return null;
 
               return (
                 <button
                   key={i}
                   onClick={() => handleSubmitAnswer(i)}
-                  className={`${colors[i]} text-white px-5 py-4 rounded-2xl shadow-md border-b-8 flex items-center gap-3 font-bold transition-all transform overflow-hidden min-w-0 w-full ${
+                  className={`${ANSWER_COLORS[i]} text-white px-5 py-4 rounded-2xl shadow-md border-b-8 flex items-center gap-3 font-bold transition-all transform overflow-hidden min-w-0 w-full ${
                     isSelected
                       ? 'ring-4 ring-white ring-offset-2 scale-105 cursor-default active:translate-y-0 active:border-b-8'
                       : 'active:border-b-0 active:translate-y-2'
                   }`}
                 >
                   <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center shrink-0 text-base font-black">
-                    {isSelected ? <CheckCircle2 size={18} className="text-white" /> : String.fromCharCode(65 + i)}
+                    {isSelected ? <CheckCircle2 size={18} /> : String.fromCharCode(65 + i)}
                   </div>
                   <MathText text={cleanOpt} className="text-left text-lg min-w-0 flex-1" />
                 </button>
@@ -266,59 +242,78 @@ export default function PlayerRoom() {
     );
   }
 
+  // ===== SHOWING ANSWER =====
   if (gameState === 'showingAnswer' && answerResult) {
-    const isCorrect = selectedAnswer === answerResult.correctAnswer;
-    
+    /**
+     * FIX BUG 6: Phân biệt 3 trường hợp:
+     * 1. Trả lời đúng
+     * 2. Trả lời sai
+     * 3. Không trả lời (hết giờ) → selectedAnswer === null
+     */
+    const didAnswer = selectedAnswer !== null;
+    const isCorrect = didAnswer && selectedAnswer === answerResult.correctAnswer;
+    const isWrong = didAnswer && selectedAnswer !== answerResult.correctAnswer;
+    const noAnswer = !didAnswer;
+
+    let bgColor = 'bg-slate-600';
+    if (isCorrect) bgColor = 'bg-green-600';
+    if (isWrong || (noAnswer && myPlayer.isEliminated)) bgColor = 'bg-red-600';
+
     return (
-      <div className={`min-h-screen flex flex-col items-center justify-center p-6 text-white text-center transition-colors duration-500 ${isCorrect ? 'bg-green-600' : 'bg-red-600'}`}>
-        <motion.div
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          className="mb-8"
-        >
-          {isCorrect ? (
-            <CheckCircle2 size={120} className="text-white drop-shadow-lg" />
-          ) : (
-            <XCircle size={120} className="text-white drop-shadow-lg" />
-          )}
+      <div className={`min-h-screen flex flex-col items-center justify-center p-6 text-white text-center transition-colors duration-500 ${bgColor}`}>
+        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="mb-8">
+          {isCorrect && <CheckCircle2 size={120} className="text-white drop-shadow-lg" />}
+          {isWrong && <XCircle size={120} className="text-white drop-shadow-lg" />}
+          {noAnswer && <MinusCircle size={120} className="text-white drop-shadow-lg" />}
         </motion.div>
-        
+
         <h1 className="text-5xl font-black mb-4 drop-shadow-md">
-          {isCorrect ? 'CHÍNH XÁC!' : 'SAI RỒI!'}
+          {isCorrect && 'CHÍNH XÁC!'}
+          {isWrong && 'SAI RỒI!'}
+          {noAnswer && 'HẾT GIỜ!'}
         </h1>
 
-        {isCorrect ? (
-          <p className="text-2xl font-bold mb-2 text-green-100">
-            🎉 Bạn đi tiếp!
-          </p>
-        ) : (
+        {isCorrect && (
+          <p className="text-2xl font-bold mb-2 text-green-100">🎉 Bạn đi tiếp!</p>
+        )}
+        {isWrong && (
           <p className="text-2xl font-bold mb-2 text-red-100">
-            {myPlayer.isEliminated ? '❌ Bạn đã bị loại!' : 'Đáp án đúng là ' + String.fromCharCode(65 + answerResult.correctAnswer)}
+            {myPlayer.isEliminated ? '❌ Bạn đã bị loại!' : `Đáp án đúng là ${String.fromCharCode(65 + answerResult.correctAnswer)}`}
           </p>
         )}
-        
+        {noAnswer && (
+          <p className="text-2xl font-bold mb-2 text-white/80">
+            {myPlayer.isEliminated
+              ? '❌ Bạn đã bị loại vì không trả lời!'
+              : `Đáp án đúng là ${String.fromCharCode(65 + answerResult.correctAnswer)}`}
+          </p>
+        )}
+
         <div className="bg-black/20 p-6 rounded-3xl backdrop-blur-sm border border-white/10 mt-8">
           <p className="text-lg text-white/80 uppercase tracking-widest mb-2">Điểm hiện tại</p>
           <p className="text-6xl font-black">{myPlayer.score}</p>
         </div>
-        
-        <p className="mt-12 text-xl font-bold opacity-80 animate-pulse">
+
+        <motion.p
+          animate={{ opacity: [0.4, 1] }}
+          transition={{ repeat: Infinity, duration: 1.5 }}
+          className="mt-12 text-xl font-bold opacity-80"
+        >
           Đang chờ câu hỏi tiếp theo...
-        </p>
+        </motion.p>
       </div>
     );
   }
 
+  // ===== FINISHED =====
   if (gameState === 'finished') {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white text-center">
         <Trophy size={100} className="text-yellow-400 mb-8 drop-shadow-[0_0_30px_rgba(250,204,21,0.5)]" />
         <h1 className="text-4xl font-black mb-4">KẾT THÚC GAME</h1>
-        
         <div className="bg-slate-800 p-8 rounded-3xl border border-slate-700 mt-8 w-full max-w-sm">
           <div className="text-6xl mb-4">{myPlayer.avatar}</div>
           <h2 className="text-2xl font-bold mb-6">{myPlayer.name}</h2>
-          
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-slate-900 p-4 rounded-2xl">
               <p className="text-sm text-slate-400 uppercase tracking-wider mb-1">Điểm số</p>
@@ -330,7 +325,6 @@ export default function PlayerRoom() {
             </div>
           </div>
         </div>
-        
         <button
           onClick={() => navigate('/')}
           className="mt-12 px-8 py-4 bg-white/10 hover:bg-white/20 text-white rounded-full font-bold text-xl backdrop-blur-sm transition"
