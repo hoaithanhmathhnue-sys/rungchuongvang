@@ -125,8 +125,21 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         setAnswerResult({ ...data.answerResult, players: playersArray });
         setGameState('showingAnswer');
       } else if (data.status === 'playing') {
-        // Chỉ chuyển sang playing nếu chưa showingAnswer
-        setGameState(prev => (prev === 'showingAnswer' ? 'showingAnswer' : 'playing'));
+        /**
+         * FIX BUG 8: Khi host bấm "Câu tiếp theo", Firebase update:
+         *   answerResult = null, answerRevealed = false, status = 'playing'
+         *
+         * Trước đây: giữ nguyên 'showingAnswer' → player bị stuck ở
+         *   "Đang chờ câu hỏi tiếp theo..." mãi mãi.
+         *
+         * Fix: Khi answerRevealed === false (host đã chuyển câu mới),
+         *   LUÔN chuyển sang 'playing' bất kể state cũ là gì.
+         *   Đồng thời reset answerResult và submitLockRef để player
+         *   có thể trả lời câu mới.
+         */
+        setAnswerResult(null);
+        setGameState('playing');
+        submitLockRef.current = false;
       }
 
       // Cập nhật myPlayer từ Firebase (điểm số mới nhất)
