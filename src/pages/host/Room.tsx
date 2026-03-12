@@ -267,17 +267,19 @@ export default function HostRoom() {
 
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">
-        <header className="bg-white shadow-sm p-4 flex justify-between items-center border-b border-slate-200">
-          <div className="text-xl font-bold text-slate-800">
+        <header className="bg-white shadow-sm p-4 flex items-center border-b border-slate-200">
+          <div className="text-xl font-bold text-slate-800 shrink-0">
             Kết quả Câu {currentQuestion.index + 1}/{currentQuestion.total}
           </div>
-          <button
-            onClick={nextQuestion}
-            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-md flex items-center gap-2"
-          >
-            {currentQuestion.index + 1 === currentQuestion.total ? 'XEM KẾT QUẢ CHUNG CUỘC' : 'CÂU TIẾP THEO'}
-            <Play size={20} />
-          </button>
+          <div className="flex-1 flex justify-center">
+            <button
+              onClick={nextQuestion}
+              className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-md flex items-center gap-2"
+            >
+              {currentQuestion.index + 1 === currentQuestion.total ? 'XEM KẾT QUẢ CHUNG CUỘC' : 'CÂU TIẾP THEO'}
+              <Play size={20} />
+            </button>
+          </div>
         </header>
 
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
