@@ -70,7 +70,7 @@ ${text.substring(0, 15000)}
 Trả về JSON array, mỗi phần tử có format:
 {
   "content": "Nội dung câu hỏi (giữ nguyên công thức toán dạng $...$)",
-  "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
+  "options": ["Đáp án 1", "Đáp án 2", "Đáp án 3", "Đáp án 4"], // KHÔNG BAO GỒM CÁC TIỀN TỐ "A. ", "B. ", "C. ", "D. " VÀO ĐÂY
   "correctAnswer": 0,
   "explanation": "Giải thích đáp án",
   "difficulty": "easy|medium|hard"
@@ -94,7 +94,12 @@ Lưu ý:
       const responseText = response.text || '';
       const jsonMatch = responseText.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+        const generated = JSON.parse(jsonMatch[0]);
+        // Xóa các tiền tố A., B., C., D. hoặc A), B) nếu AI vẫn lặp lại
+        return generated.map((q: any) => ({
+          ...q,
+          options: q.options.map((opt: string) => opt.replace(/^[A-D][\.\):\/\-]\s*/i, '').trim())
+        }));
       }
       throw new Error('Không parse được JSON');
     } catch (err: any) {
