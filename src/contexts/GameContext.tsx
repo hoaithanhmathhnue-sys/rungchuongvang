@@ -209,16 +209,28 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     }
   }, [room, isHost]);
 
+  const showAnswerRunningRef = useRef(false);
+
   const showAnswer = useCallback(async () => {
     if (!room || !isHost) return;
+    // Chặn gọi 2 lần liên tiếp (double-click, race condition)
+    if (showAnswerRunningRef.current) return;
+    showAnswerRunningRef.current = true;
+
     const pin = room.pin;
-    const q = room.questions[room.currentQuestionIndex];
-    if (!q) return;
+
+    // Fetch FRESH data từ Firebase để tránh dùng stale React state
+    const freshSnap = await get(ref(database, `rooms/${pin}`));
+    if (!freshSnap.exists()) { showAnswerRunningRef.current = false; return; }
+    const freshRoom = freshSnap.val() as Room;
+
+    const q = freshRoom.questions[freshRoom.currentQuestionIndex];
+    if (!q) { showAnswerRunningRef.current = false; return; }
 
     const correctIndex = q.correctAnswer;
-    const playersObj = room.players || {};
-    const roomAnswers = room.answers || {};
-    const roomTimes = room.answerTimes || {};
+    const playersObj = freshRoom.players || {};
+    const roomAnswers = freshRoom.answers || {};
+    const roomTimes = freshRoom.answerTimes || {};
 
     const updatedPlayers: Record<string, Player> = {};
     const entries = Object.entries(playersObj) as [string, Player][];
@@ -231,9 +243,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       const answer = roomAnswers[p.tabId];
       if (answer === correctIndex) {
         let points = q.points || 100;
-        if (room.settings.speedBonus) {
-          const timeTaken = roomTimes[p.tabId] || room.settings.timePerQuestion * 1000;
-          const timeRatio = Math.max(0, 1 - (timeTaken / (room.settings.timePerQuestion * 1000)));
+        if (freshRoom.settings.speedBonus) {
+          const timeTaken = roomTimes[p.tabId] || freshRoom.settings.timePerQuestion * 1000;
+          const timeRatio = Math.max(0, 1 - (timeTaken / (freshRoom.settings.timePerQuestion * 1000)));
           points += Math.floor(timeRatio * 50);
         }
         updatedPlayers[key] = {
@@ -241,7 +253,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           score: p.score + points,
           correctAnswers: p.correctAnswers + 1,
         };
-      } else if (room.settings.eliminationMode && answer !== undefined) {
+      } else if (freshRoom.settings.eliminationMode && answer !== undefined) {
         updatedPlayers[key] = { ...p, isEliminated: true };
       } else {
         updatedPlayers[key] = p;
@@ -262,6 +274,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
     setAnswerResult({ ...result, players: Object.values(updatedPlayers) });
     setGameState('showingAnswer');
+    showAnswerRunningRef.current = false;
   }, [room, isHost]);
 
   // ===== Player Actions =====
@@ -298,8 +311,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const submitAnswer = useCallback(async (answerIndex: number) => {
     if (!room) return;
     const uid = getCurrentUserId();
-    const timeTaken = Date.now() - (room.questionStartTime || Date.now());
 
+    // Kiểm tra xem player đã submit chưa bằng cách đọc trực tiếp từ Firebase
+    const existingSnap = await get(ref(database, `rooms/${room.pin}/answers/${uid}`));
+    if (existingSnap.exists()) {
+      // Đã submit rồi, không ghi đè
+      console.warn('[submitAnswer] Đã submit rồi, bỏ qua.');
+      return;
+    }
+
+    const timeTaken = Date.now() - (room.questionStartTime || Date.now());
     await update(ref(database), {
       [`rooms/${room.pin}/answers/${uid}`]: answerIndex,
       [`rooms/${room.pin}/answerTimes/${uid}`]: timeTaken,

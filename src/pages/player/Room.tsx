@@ -22,6 +22,7 @@ export default function PlayerRoom() {
   const [timeLeft, setTimeLeft] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [joined, setJoined] = useState(false);
+  const [showAlreadyAnswered, setShowAlreadyAnswered] = useState(false);
   
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -84,8 +85,14 @@ export default function PlayerRoom() {
   const hasSubmittedRef = useRef<boolean>(false);
 
   const handleSubmitAnswer = (index: number) => {
-    if (hasSubmittedRef.current || selectedAnswer !== null || myPlayer?.isEliminated) return;
-    hasSubmittedRef.current = true; // Chặn ngay lập tức, trước khi setState
+    if (myPlayer?.isEliminated) return;
+    // Nếu đã submit rồi → hiện popup thay vì submit lại
+    if (hasSubmittedRef.current || selectedAnswer !== null) {
+      setShowAlreadyAnswered(true);
+      setTimeout(() => setShowAlreadyAnswered(false), 1500);
+      return;
+    }
+    hasSubmittedRef.current = true;
     setSelectedAnswer(index);
     submitAnswer(index);
   };
@@ -186,6 +193,21 @@ export default function PlayerRoom() {
     // Chưa chọn → Hiện câu hỏi và đáp án
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">
+        {/* Popup "Đã trả lời" */}
+        <AnimatePresence>
+          {showAlreadyAnswered && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-slate-800 text-white px-6 py-3 rounded-full shadow-xl font-bold text-lg flex items-center gap-2"
+            >
+              <CheckCircle2 size={20} className="text-green-400" />
+              Bạn đã trả lời rồi!
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <header className="bg-white shadow-sm p-4 flex justify-between items-center sticky top-0 z-10">
           <div className="flex items-center gap-3">
             <span className="text-3xl">{myPlayer.avatar}</span>
@@ -200,15 +222,19 @@ export default function PlayerRoom() {
           </div>
         </header>
 
-        <main className="flex-1 p-4 flex flex-col items-center justify-center gap-6 max-w-md mx-auto w-full">
-          <div className="bg-white p-6 rounded-3xl shadow-lg border border-slate-100 w-full text-center">
+        <main className="flex-1 p-4 flex flex-col items-center justify-center gap-4 max-w-md mx-auto w-full">
+          <div className="bg-white p-5 rounded-3xl shadow-lg border border-slate-100 w-full text-center">
             <span className="text-sm font-bold text-slate-400 uppercase tracking-wider block mb-2">
               Câu {currentQuestion.index + 1}
             </span>
-            <MathText text={currentQuestion.content} tag="h2" className="text-2xl font-black text-slate-800 leading-snug" />
+            <MathText
+              text={currentQuestion.content}
+              tag="div"
+              className="text-xl font-black text-slate-800 leading-snug w-full"
+            />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 w-full">
+          <div className="grid grid-cols-1 gap-3 w-full">
             {currentQuestion.options.map((opt: string, i: number) => {
               const cleanOpt = opt.replace(/^[A-D][\.\/\)\:\-]\s*/i, '').trim();
               const isSelected = selectedAnswer === i;
@@ -221,15 +247,16 @@ export default function PlayerRoom() {
                 <button
                   key={i}
                   onClick={() => handleSubmitAnswer(i)}
-                  disabled={hasSelected}
-                  className={`${colors[i]} text-white p-6 rounded-2xl shadow-md border-b-8 flex items-center gap-4 text-xl font-bold transition-all transform active:border-b-0 active:translate-y-2 ${
-                    isSelected ? 'ring-4 ring-white ring-offset-2 scale-105 cursor-default' : ''
+                  className={`${colors[i]} text-white px-5 py-4 rounded-2xl shadow-md border-b-8 flex items-center gap-3 font-bold transition-all transform overflow-hidden min-w-0 w-full ${
+                    isSelected
+                      ? 'ring-4 ring-white ring-offset-2 scale-105 cursor-default active:translate-y-0 active:border-b-8'
+                      : 'active:border-b-0 active:translate-y-2'
                   }`}
                 >
-                  <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
-                    {String.fromCharCode(65 + i)}
+                  <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center shrink-0 text-base font-black">
+                    {isSelected ? <CheckCircle2 size={18} className="text-white" /> : String.fromCharCode(65 + i)}
                   </div>
-                  <MathText text={cleanOpt} className="text-left" />
+                  <MathText text={cleanOpt} className="text-left text-lg min-w-0 flex-1" />
                 </button>
               );
             })}

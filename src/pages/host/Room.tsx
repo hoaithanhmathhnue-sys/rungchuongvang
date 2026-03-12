@@ -229,11 +229,11 @@ export default function HostRoom() {
               ];
               const cleanOpt = opt.replace(/^[A-D][\.\/\)\:\-]\s*/i, '').trim();
               return (
-                <div key={i} className={`${colors[i]} text-white p-6 rounded-2xl shadow-lg border-b-8 flex items-center gap-4 text-2xl font-bold`}>
-                  <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                <div key={i} className={`${colors[i]} text-white p-5 rounded-2xl shadow-lg border-b-8 flex items-center gap-4 font-bold overflow-hidden min-w-0`}>
+                  <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center shrink-0 text-xl font-black">
                     {String.fromCharCode(65 + i)}
                   </div>
-                  <MathText text={cleanOpt} />
+                  <MathText text={cleanOpt} className="text-xl leading-snug min-w-0 flex-1" />
                 </div>
               );
             })}
