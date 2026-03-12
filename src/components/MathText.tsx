@@ -20,16 +20,27 @@ export default function MathText({ text, className = '', tag: Tag = 'span' }: Ma
   const ref = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    if (ref.current && window.MathJax) {
-      // Reset content
-      ref.current.innerHTML = text;
-      // Typeset
-      if (window.MathJax.typesetPromise) {
+    let timeoutId: number;
+
+    const renderMath = () => {
+      if (!ref.current) return;
+      
+      if (window.MathJax && window.MathJax.typesetPromise) {
+        // Reset text và typeset
+        ref.current.innerHTML = text;
         window.MathJax.typesetPromise([ref.current]).catch((err: any) => {
           console.warn('[MathJax] Typeset error:', err);
         });
+      } else {
+        // Tạm thời hiển thị raw, thử gọi lại sau 200ms
+        ref.current.innerHTML = text;
+        timeoutId = window.setTimeout(renderMath, 200);
       }
-    }
+    };
+
+    renderMath();
+
+    return () => clearTimeout(timeoutId);
   }, [text]);
 
   return <Tag ref={ref as any} className={className} dangerouslySetInnerHTML={{ __html: text }} />;
