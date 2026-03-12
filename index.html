@@ -13,7 +13,8 @@
         },
         svg: {
           fontCache: 'global',
-          scale: 90,
+          scale: 1,
+          minScale: 0.5,
           overflow: 'linebreak',
           linebreaks: { automatic: true, width: '90%' }
         },
@@ -25,6 +26,26 @@
         startup: { typeset: false }
       };
     </script>
+    <style>
+      /* Đồng nhất kích thước công thức MathJax */
+      mjx-container {
+        display: inline-flex !important;
+        align-items: center !important;
+        vertical-align: middle !important;
+        max-width: 100% !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        font-size: inherit !important;
+      }
+      mjx-container[display="true"] {
+        display: inline-flex !important;
+        margin: 0 !important;
+      }
+      mjx-container svg {
+        max-width: 100% !important;
+        height: auto !important;
+      }
+    </style>
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" defer></script>
   </head>
   <body>

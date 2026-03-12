@@ -14,10 +14,10 @@ interface MathTextProps {
 /**
  * MathText – render text + công thức MathJax, không vỡ layout.
  *
- * BUG FIXES:
- * 1. Regex $$...$$ fixed: $$$1$ → $content$ (trước bị tạo ra $$content$ sai)
- * 2. innerHTML set TRƯỚC typesetClear (không phải sau)
- * 3. applyContainerStyles sau khi render xong để ép inline
+ * FIX: Đồng nhất kích thước công thức giữa ngân hàng câu hỏi và màn hình trò chơi.
+ * - Luôn convert display math → inline math
+ * - Ép mjx-container hiển thị inline, font-size kế thừa từ parent
+ * - Giới hạn kích thước SVG trong container
  */
 export default function MathText({
   text,
@@ -32,12 +32,13 @@ export default function MathText({
     let attempts = 0;
 
     /**
-     * Fix: $$$1$ tạo ra "$$content$" → sai.
-     * Cần tạo ra "$content$" → dùng literal "$" + capture + "$"
+     * Convert tất cả display math → inline math để tránh render quá to.
+     * $$...$$ → \(...\)
+     * \[...\] → \(...\)
      */
     const toInline = (raw: string): string => {
-      // $$...$$ → $...$ (display → inline)
-      let result = raw.replace(/\$\$([^$]+?)\$\$/gs, (_match, inner) => `$${inner}$`);
+      // $$...$$ → \(...\)  (inline math)
+      let result = raw.replace(/\$\$([^$]+?)\$\$/gs, '\\($1\\)');
       // \[...\] → \(...\)
       result = result.replace(/\\\[(.+?)\\\]/gs, '\\($1\\)');
       return result;
@@ -46,18 +47,24 @@ export default function MathText({
     const applyContainerStyles = (el: HTMLElement) => {
       el.querySelectorAll('mjx-container').forEach((node) => {
         const c = node as HTMLElement;
+        // Ép inline-flex để không chiếm full width
         c.style.display = 'inline-flex';
         c.style.alignItems = 'center';
         c.style.verticalAlign = 'middle';
         c.style.maxWidth = '100%';
         c.style.margin = '0 2px';
+        c.style.fontSize = 'inherit';
+        // Xóa attribute display="true" nếu có (do display math)
+        c.removeAttribute('display');
+
         const svg = c.querySelector('svg') as SVGSVGElement | null;
         if (svg) {
           svg.style.maxWidth = '100%';
           svg.style.height = 'auto';
           svg.style.overflow = 'visible';
           if (mathScale !== 1) {
-            svg.style.fontSize = `${mathScale}em`;
+            svg.style.transform = `scale(${mathScale})`;
+            svg.style.transformOrigin = 'left center';
           }
         }
       });
@@ -68,7 +75,6 @@ export default function MathText({
 
       if (window.MathJax?.typesetPromise) {
         try {
-          // FIX: set innerHTML TRƯỚC, rồi mới clear cache cũ, rồi mới typeset
           const inlineText = toInline(text);
           ref.current.innerHTML = inlineText;
           window.MathJax.typesetClear?.([ref.current]);
@@ -82,7 +88,6 @@ export default function MathText({
         }
       } else if (attempts < 30) {
         attempts++;
-        // Hiện raw text trong lúc chờ MathJax load
         if (isMounted && ref.current) ref.current.innerHTML = toInline(text);
         setTimeout(tryRender, 200);
       }
@@ -101,6 +106,7 @@ export default function MathText({
         overflowWrap: 'break-word',
         minWidth: 0,
         lineHeight: 1.7,
+        overflow: 'hidden',
       }}
     />
   );
