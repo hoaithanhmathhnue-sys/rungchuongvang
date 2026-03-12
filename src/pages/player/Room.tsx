@@ -50,6 +50,7 @@ export default function PlayerRoom() {
     if (gameState === 'playing' && currentQuestion) {
       setTimeLeft(currentQuestion.timeLimit);
       setSelectedAnswer(null);
+      hasSubmittedRef.current = false; // Reset khi câu hỏi mới
       
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
@@ -79,8 +80,12 @@ export default function PlayerRoom() {
     }
   }, [gameState, myPlayer]);
 
+  // Dùng ref để chặn tuyệt đối việc submit nhiều lần (tránh race condition với state)
+  const hasSubmittedRef = useRef<boolean>(false);
+
   const handleSubmitAnswer = (index: number) => {
-    if (selectedAnswer !== null || myPlayer?.isEliminated) return;
+    if (hasSubmittedRef.current || selectedAnswer !== null || myPlayer?.isEliminated) return;
+    hasSubmittedRef.current = true; // Chặn ngay lập tức, trước khi setState
     setSelectedAnswer(index);
     submitAnswer(index);
   };
@@ -206,13 +211,20 @@ export default function PlayerRoom() {
           <div className="grid grid-cols-1 gap-4 w-full">
             {currentQuestion.options.map((opt: string, i: number) => {
               const cleanOpt = opt.replace(/^[A-D][\.\/\)\:\-]\s*/i, '').trim();
-              
+              const isSelected = selectedAnswer === i;
+              const hasSelected = selectedAnswer !== null;
+
+              // Ẩn đáp án không được chọn sau khi học sinh đã chọn
+              if (hasSelected && !isSelected) return null;
+
               return (
                 <button
                   key={i}
                   onClick={() => handleSubmitAnswer(i)}
-                  disabled={selectedAnswer !== null}
-                  className={`${colors[i]} text-white p-6 rounded-2xl shadow-md border-b-8 flex items-center gap-4 text-xl font-bold transition-all transform active:border-b-0 active:translate-y-2`}
+                  disabled={hasSelected}
+                  className={`${colors[i]} text-white p-6 rounded-2xl shadow-md border-b-8 flex items-center gap-4 text-xl font-bold transition-all transform active:border-b-0 active:translate-y-2 ${
+                    isSelected ? 'ring-4 ring-white ring-offset-2 scale-105 cursor-default' : ''
+                  }`}
                 >
                   <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
                     {String.fromCharCode(65 + i)}

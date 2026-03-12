@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 declare global {
   interface Window {
@@ -18,38 +18,54 @@ interface MathTextProps {
  */
 export default function MathText({ text, className = '', tag: Tag = 'span' }: MathTextProps) {
   const ref = useRef<HTMLElement>(null);
+  const [rendered, setRendered] = useState(false);
 
   useEffect(() => {
-    let timeoutId: number;
     let isMounted = true;
+    let attempts = 0;
+    const maxAttempts = 20;
 
-    const renderMath = async () => {
-      if (!ref.current || !isMounted) return;
-      
+    const tryRender = async () => {
+      if (!isMounted || !ref.current) return;
+
       if (window.MathJax && window.MathJax.typesetPromise) {
         try {
+          // Cập nhật nội dung HTML trước
+          ref.current.innerHTML = text;
+          // Xoá cache MathJax cũ trên element này
           if (window.MathJax.typesetClear) {
             window.MathJax.typesetClear([ref.current]);
           }
-          if (isMounted) ref.current.innerHTML = text;
+          // Render lại MathJax
           await window.MathJax.typesetPromise([ref.current]);
-        } catch (err: any) {
-          console.warn('[MathJax] Typeset error:', err);
+          if (isMounted) setRendered(true);
+        } catch (err) {
+          console.warn('[MathJax] Lỗi render:', err);
+          // Vẫn hiển thị raw nếu lỗi
+          if (isMounted && ref.current) ref.current.innerHTML = text;
         }
-      } else {
-        // Tạm thời hiển thị raw, thử gọi lại sau 200ms
-        if (isMounted) ref.current.innerHTML = text;
-        timeoutId = window.setTimeout(renderMath, 300);
+      } else if (attempts < maxAttempts) {
+        // MathJax chưa load xong, thử lại sau 200ms
+        attempts++;
+        if (isMounted && ref.current) ref.current.innerHTML = text;
+        setTimeout(tryRender, 200);
       }
     };
 
-    renderMath();
+    setRendered(false);
+    tryRender();
 
     return () => {
       isMounted = false;
-      clearTimeout(timeoutId);
     };
   }, [text]);
 
-  return <Tag ref={ref as any} className={className} dangerouslySetInnerHTML={{ __html: text }} />;
+  // Render element với ref, không dùng dangerouslySetInnerHTML song song với ref innerHTML
+  return (
+    <Tag
+      ref={ref as any}
+      className={className}
+      style={{ visibility: 'visible' }}
+    />
+  );
 }
