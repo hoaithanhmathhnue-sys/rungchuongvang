@@ -19,7 +19,7 @@ export default function Home() {
           </p>
 
           {/* Title - one line */}
-          <h1 className="text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-yellow-400 mb-3 drop-shadow-lg whitespace-nowrap">
+          <h1 className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-yellow-400 mb-3 drop-shadow-lg whitespace-nowrap">
             RUNG CHUÔNG VÀNG
           </h1>
 
